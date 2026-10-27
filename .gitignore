@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+out/
+runs/
+figs/
+*.csv
+!requirements.txt
