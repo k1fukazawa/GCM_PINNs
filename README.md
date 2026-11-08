@@ -3,7 +3,7 @@
 Code and trained weights for the manuscript on a physics-informed neural network
 (PINN) surrogate of an all-atmosphere GCM (T42, 150 levels). The package
 reproduces the training and the evaluation of the ten configurations (M0-M9)
-reported in the paper.
+and of the additional solar-forced experiment (M2-SZA) reported in the paper.
 
 ## 1. Contents
 
@@ -13,10 +13,14 @@ code/
   train_v17.py      training, implementation v17   -> M8, M9
   evaluate.py       evaluation of every metric in the paper
   eval_extra.py     model definition shared by evaluate.py
-  make_table4.py    Table 4 (lambda_phys control experiment)
+  make_table4.py    Table 5 (lambda_phys control experiment; see Section 5.3)
   plot_profiles.py  Figures 7 and 8 (vertical profiles, bias decomposition)
+  train_sza.py      training of M2-SZA (train_v15.py plus three solar input channels)
+  solar_geometry.py solar zenith angle and local mean solar time used by train_sza.py
+  evaluate_sza.py   evaluation of M2-SZA (9 input channels)
 weights/
   M0.pt ... M9_seed2.pt   12 checkpoints (Section 4)
+  M2SZA.pt                M2-SZA checkpoint (Sections 4 and 5.4)
 ```
 
 Not included: the GCM source code (available from the model developers) and the
@@ -60,6 +64,7 @@ for verification, set by `--train_days 25`.
 | `M9_seed0.pt` | M9 (v17 s0) | 2.86 MB | `ab7da7a76157e575` |
 | `M9_seed1.pt` | M9 (v17 s1) | 2.86 MB | `db1ae7737576bc2d` |
 | `M9_seed2.pt` | M9 (v17 s2) | 2.86 MB | `f066003531c91eb9` |
+| `M2SZA.pt` | M2-SZA (train_sza s0) | 1.44 MB | `18c746235190f63b` |
 
 Each file is a dictionary with the keys `config_id`, `note`, `args` (hyperparameters
 of the run), `model` (trained weights) and `ema` (moving average, M0, M1 and M9
@@ -118,7 +123,6 @@ python code/train_v15.py --dir $DATA \
     --lr 0.001 \
     --mass_fix \
     --noise 0.05 \
-    --rollout_start None \
     --rollouts 1 6 12 24 \
     --seed 0 \
     --stride 1 \
@@ -167,7 +171,6 @@ python code/train_v17.py --dir $DATA \
     --mass_fix \
     --no-mass_fix_cosphi \
     --noise 0.05 \
-    --rollout_start None \
     --rollouts 1 6 12 24 \
     --seed 0 \
     --stride 1 \
@@ -191,7 +194,10 @@ python code/train_v17.py --dir $DATA \
 One run takes 32-36 min on 112 threads; `--seed` selects the seed, and seeds 0,
 1 and 2 give the three M9 runs of the paper.
 
-### 5.3 Table 4
+### 5.3 Table 5 (lambda_phys control experiment)
+
+The script keeps the name `make_table4.py` of the first release; the table it
+builds is Table 5 of the paper.
 
 ```bash
 python code/make_table4.py \
@@ -205,6 +211,97 @@ calibrated series `surface_rmse` is read only for reference, which is why both
 appear in the output and why the caption of Table 4 states that the values are
 uncorrected.
 
+### 5.4 Solar-forced variant (M2-SZA)
+
+Section 3.4 and Tables A2, A3 and S6 of the paper report an additional
+experiment, M2-SZA, in which the solar geometry is appended to the input of M2
+as three channels: the cosine of the solar zenith angle and the sine and cosine
+of the local mean solar time. The input therefore has 9 channels instead of 6;
+all other settings are those of M2. `evaluate.py` builds a 6-channel (7-channel
+with terrain) input, so M2-SZA has its own training and evaluation scripts.
+
+`train_sza.py` differs from `train_v15.py` only in
+
+* the number of input channels, `(7 if use_terrain else 6) + (3 if solar else 0)`,
+* the options `--solar`, `--time_origin` and `--data_start_hour`,
+* the argument `hour` of `build_input()`, which appends the solar channels, and
+  the time index passed at every call (`s0 + k` in training, `rs + k` in the
+  rollout).
+
+The solar channels are computed by `solar_geometry.py` (NOAA approximation) from
+the time of each input state. Data index 0 is `2020-01-01T00:00:00+00:00`, the
+start of the GCM run. `--time_origin` and `--data_start_hour` must be the same in
+training and evaluation; otherwise the phase of the solar forcing, and thus the
+tidal phase, is inconsistent.
+
+Evaluate the released weights (one rollout, 3-5 min on 112 threads):
+
+```bash
+mkdir -p runs/M2SZA
+cp weights/M2SZA.pt runs/M2SZA/final.pt
+python code/evaluate_sza.py --run_dir runs/M2SZA --data_dir $DATA --threads 112 \
+    --t_train 600 --horizon 143 --out out/M2SZA/eval_m2sza.json
+```
+
+The output reproduces the M2-SZA row of Table A3 (DW1/SW2 amplitudes of the
+temperature in the equatorial band, +-21.5 deg, in K):
+
+| altitude | DW1 M2-SZA / truth | SW2 M2-SZA / truth |
+|---|---|---|
+| 99.8 km | 3.26 / 6.74 | 2.43 / 9.80 |
+| 123.1 km | 9.88 / 10.98 | 3.53 / 21.62 |
+| 136.5 km | 15.69 / 18.34 | 5.84 / 18.88 |
+| 148.7 km | 26.13 / 33.89 | 8.45 / 19.94 |
+
+Train it again (about 32 min on 112 threads):
+
+```bash
+python code/train_sza.py --dir $DATA \
+    --Ps_weight 1.8 \
+    --T_weight 1.3 \
+    --bc_lower kinematic \
+    --bc_upper flat \
+    --bptt_steps 2 \
+    --cal_hours 24 \
+    --calibrate \
+    --causal_eps 0.03 \
+    --ch 48 96 64 32 \
+    --clip_inc 1.0 \
+    --data_start_hour 0.0 \
+    --ema_decay 0.0 \
+    --epochs_per_stage 6 \
+    --friction_coef 0.0002 \
+    --hypervisc 0.05 \
+    --inference_hypervisc \
+    --lambda_phys 0.03 \
+    --level_weight_floor 0.0 \
+    --level_weight_scale_km 40.0 \
+    --levels 48 \
+    --lr 0.001 \
+    --no-mass_fix \
+    --noise 0.05 \
+    --rollouts 1 6 12 24 \
+    --seed 0 \
+    --solar \
+    --stride 1 \
+    --time_origin 2020-01-01T00:00:00+00:00 \
+    --top_boost 1.0 \
+    --top_levels 5 \
+    --train_days 25 \
+    --u_weight 1.0 \
+    --no-use_terrain \
+    --v_weight 1.0 \
+    --w_bc 0.0 \
+    --w_mass 0.0 \
+    --w_spec 0.0 \
+    --w_spec_high 0.0 \
+    --w_terr 0.0 \
+    --w_weight 1.0 \
+    --w_wind_mass 0.0 \
+    --w_zonal 0.0 \
+    --outdir out/M2SZA
+```
+
 ## 6. Configuration map
 
 | paper | implementation | change relative to the previous configuration |
@@ -217,8 +314,9 @@ uncorrected.
 | M5 | v15 | layer-weight floor 0.1, terrain-gradient regularization, stronger boundary loss |
 | M6 | v15 | global-mean wind-increment constraint, high-wavenumber spectral loss, upper-level boost |
 | M7 | v15 | zonal-mean wind-increment constraint |
-| M8 | v17 | M7 losses with the double normalization of Section 2.4.4 removed |
+| M8 | v17 | M7 losses with the double normalization of Section 2.4.3 removed |
 | M9 | v17 | increment normalization, weight EMA, mass fixer in the final curriculum stage |
+| M2-SZA | train_sza (v15 base) | M2 with the solar zenith angle and local mean solar time in the input (Section 5.4) |
 
 Implementations v7-v11 are not part of this package; only their checkpoints are
 archived. They differ from v15/v17 in the number of input channels (no terrain
@@ -240,6 +338,12 @@ with the same script.
   rewriting.
 * Console messages of the training loop are left as they were in the archived
   runs so that the logs of the paper remain comparable.
+* Version 1.1.0 adds M2-SZA (`train_sza.py`, `solar_geometry.py`,
+  `evaluate_sza.py`, `weights/M2SZA.pt`; Section 5.4), corrects the section and
+  table numbers to those of the revised manuscript, and removes
+  `--rollout_start None` from the training commands of Section 5.2 (the option
+  takes an integer; when it is omitted, the rollout starts at the end of the
+  training period).
 
 ## 8. Licence and citation
 

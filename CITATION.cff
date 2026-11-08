@@ -5,8 +5,8 @@ type: software
 authors:
   - family-names: "FUKAZAWA"
     given-names: "Keiichiro"
-version: "1.0.0"
-date-released: "2026-10-27"
+version: "1.1.0"
+date-released: "2026-11-08"
 license: MIT
 keywords:
   - physics-informed neural network
