@@ -1,9 +1,14 @@
-# PINN all-atmosphere surrogate: code and trained weights
+# GCM_PINNs: code and trained weights of a physics-informed neural network surrogate model for a general circulation model
 
-Code and trained weights for the manuscript on a physics-informed neural network
-(PINN) surrogate of an all-atmosphere GCM (T42, 150 levels). The package
-reproduces the training and the evaluation of the ten configurations (M0-M9)
-and of the additional solar-forced experiment (M2-SZA) reported in the paper.
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24050684.svg)](https://doi.org/10.5281/zenodo.24050684)
+
+Code and trained weights for the manuscript "Development and evaluation of a
+physics-informed neural network surrogate model for a general circulation model"
+by K. Fukazawa and Y. Miyoshi (submitted to Earth, Planets and Space). The
+surrogate approximates a GCM that contains the region from the ground surface to
+the exobase (T42, 150 levels). The package reproduces the training and the
+evaluation of the ten configurations (M0-M9) and of the additional
+solar-forced experiment (M2-SZA) reported in the paper.
 
 ## 1. Contents
 
@@ -347,4 +352,21 @@ with the same script.
 
 ## 8. Licence and citation
 
-To be completed on submission (licence and DOI of this archive).
+* Code (`code/`): MIT licence (`LICENSE`).
+* Trained weights (`weights/`): CC BY 4.0 (`LICENSE-weights`).
+
+Version 1.1.0 of this repository is archived at Zenodo:
+
+> Fukazawa, K. (2026) GCM_PINNs: code and trained weights of a physics-informed
+> neural network surrogate model for a general circulation model (v1.1.0).
+> Zenodo. https://doi.org/10.5281/zenodo.24050684
+
+If you use this code or these weights, please also cite the accompanying
+manuscript:
+
+> Fukazawa, K., Miyoshi, Y. Development and evaluation of a physics-informed
+> neural network surrogate model for a general circulation model. Submitted to
+> Earth, Planets and Space.
+
+The DOI above refers to version 1.1.0. The Zenodo record also gives a concept
+DOI that always resolves to the latest version.
