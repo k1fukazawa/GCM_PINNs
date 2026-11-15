@@ -1,31 +1,41 @@
-# GCM_PINNs: code and trained weights of a physics-informed neural network surrogate model for a general circulation model
+# GCM_PINNs: code, trained weights, and evaluation results of a physics-informed neural network surrogate model for a general circulation model
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24050684.svg)](https://doi.org/10.5281/zenodo.24050684)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24050683.svg)](https://doi.org/10.5281/zenodo.24050683)
 
-Code and trained weights for the manuscript "Development and evaluation of a
-physics-informed neural network surrogate model for a general circulation model"
-by K. Fukazawa and Y. Miyoshi (submitted to Earth, Planets and Space). The
-surrogate approximates a GCM that contains the region from the ground surface to
-the exobase (T42, 150 levels). The package reproduces the training and the
-evaluation of the ten configurations (M0-M9) and of the additional
-solar-forced experiment (M2-SZA) reported in the paper.
+Code, trained weights, and evaluation results for the manuscript "Development and
+evaluation of a physics-informed neural network surrogate model for a general
+circulation model" by K. Fukazawa and Y. Miyoshi (submitted to Earth, Planets and
+Space). The surrogate approximates a GCM that contains the region from the ground
+surface to the exobase (T42, 150 levels). The package reproduces the training and
+the evaluation of the 18 configurations of the paper (three random seeds each),
+the statistical baselines, and Tables 3-7 and Figures 2-8.
+
+Version 2.0.0 replaces version 1.x completely (Section 8).
 
 ## 1. Contents
 
 ```
 code/
-  train_v15.py      training, implementation v15   -> M5, M6, M7
-  train_v17.py      training, implementation v17   -> M8, M9
-  evaluate.py       evaluation of every metric in the paper
-  eval_extra.py     model definition shared by evaluate.py
-  make_table4.py    Table 5 (lambda_phys control experiment; see Section 5.3)
-  plot_profiles.py  Figures 7 and 8 (vertical profiles, bias decomposition)
-  train_sza.py      training of M2-SZA (train_v15.py plus three solar input channels)
-  solar_geometry.py solar zenith angle and local mean solar time used by train_sza.py
-  evaluate_sza.py   evaluation of M2-SZA (9 input channels)
+  train.py              training of every configuration
+  evaluate.py           evaluation of every metric in the paper; fields for the figures
+  eval_extra.py         model definition used by evaluate.py
+  solar_geometry.py     solar zenith angle and local mean solar time (solar input channels)
+  baseline_diurnal.py   baselines that retain the diurnal cycle
+  pack_weights.py       packing of the checkpoints for release
+jobs/
+  run_config.sh         command line of each configuration: bash jobs/run_config.sh M5 0
+analysis/
+  lib.py, logs.py       loaders of results/
+  tabs.py               Tables 3-7
+  figs.py, fig2.py      Figures 3-8 and Figure 2
+  make_movie.py         movie of the GCM, the surrogate, and their difference
+results/
+  <configuration>_seed<seed>/results.json, results_extra3.json   evaluation of the 54 runs
+  M5_seed0/fields.npz, M5-SZA_seed0/fields.npz                   fields of Figures 5 and 8
+  baselines/diurnal.json                                         statistical baselines
+  training_log.txt                                               loss terms of every epoch
 weights/
-  M0.pt ... M9_seed2.pt   12 checkpoints (Section 4)
-  M2SZA.pt                M2-SZA checkpoint (Sections 4 and 5.4)
+  <configuration>_seed<seed>.pt                                  54 checkpoints, SHA256.md
 ```
 
 Not included: the GCM source code (available from the model developers) and the
@@ -33,9 +43,9 @@ raw GCM output, which is available from the authors on reasonable request.
 
 ## 2. Requirements
 
-* Python 3.11, PyTorch 2.2 (CPU only, no GPU), NumPy, Matplotlib for `plot_profiles.py`
-* The paper used `pytorch/2.2.0.py311_intel-2023.2` on one node of 112 CPU threads;
-  `--threads 112` reproduces the published timings
+* Python 3.11, PyTorch 2.2 (CPU only, no GPU), NumPy; Matplotlib for `analysis/`;
+  ffmpeg for MP4 output of `make_movie.py` (a GIF is written without it)
+* The paper used `pytorch/2.2.0.py311_intel-2023.2` on one node with 112 CPU threads
 
 ## 3. Input data layout
 
@@ -43,330 +53,143 @@ One directory holds the GCM fields as NumPy arrays:
 
 | file | shape | content |
 |---|---|---|
-| `gu.npy`, `gv.npy`, `gw.npy`, `gt.npy` | `[nt, 150, nlat, nlon]` | zonal, meridional and vertical wind, temperature |
-| `gp.npy` | `[nt, nlat, nlon]` | surface pressure |
-| `multilayer_gz.npy` | `[nt, 150, nlat, nlon]` | geopotential height of each level |
+| `gu.npy`, `gv.npy`, `gt.npy` | `[nt, 150, nlat, nlon]` | zonal wind, meridional wind [m/s], temperature [K] |
+| `gw.npy` | `[nt, 150, nlat, nlon]` | pressure vertical velocity omega [hPa/s] |
+| `gp.npy` | `[nt, nlat, nlon]` | surface pressure [hPa] |
+| `multilayer_gz.npy` | `[nt, 150, nlat, nlon]` | geopotential height of each level [m] |
 
 `nt` is the number of hourly records (744 for the 31-day run of the paper),
 `nlat = 64` and `nlon = 128` for T42. Row `j = 0` of the latitude axis is the
-North Pole and the meridional derivative of the physics residual assumes this
-ordering. The first 600 records (25 days) are used for training and the last 144
-for verification, set by `--train_days 25`.
+northernmost row. The first 600 records (25 days) are used for training
+(`--train_days 25`) and the last 144 for validation.
 
-## 4. Checkpoints
+`gw.npy` is the pressure vertical velocity, not a geometric vertical velocity.
+`train.py` converts it to the geometric vertical velocity, `w = -omega R T / (p g)`,
+in the physics residual and in the kinematic boundary condition (`--w_var omega`,
+`--omega_to_pa 100`). In the GCM output, omega at the lowest level is zero at all
+grid points, so the kinematic condition is imposed at the second lowest of the 48
+levels (`--bc_level 1`). At start-up, `train.py` prints the correlation between the
+two sides of the kinematic condition in the training data (0.87 for the data of the
+paper), which serves as a check of the unit and of the level.
 
-| file | configuration | size | SHA-256 (first 16 hex) |
-|---|---|---|---|
-| `M0.pt` | M0 (v7) | 2.84 MB | `132b357546925888` |
-| `M1.pt` | M1 (v8) | 2.84 MB | `91e9bd6ae37b0cc9` |
-| `M2.pt` | M2 (v9) | 1.42 MB | `c0c6a923a38d3152` |
-| `M3.pt` | M3 (v10) | 1.43 MB | `23eace92e1c3881d` |
-| `M4.pt` | M4 (v11) | 1.43 MB | `385ea19f0fcf874e` |
-| `M5.pt` | M5 (v15 s0) | 1.43 MB | `5ce5d7e0f850f488` |
-| `M6.pt` | M6 (v15 s0) | 1.43 MB | `0d798adf17d5eb3e` |
-| `M7.pt` | M7 (v15 s0) | 1.43 MB | `18b255a54c3e2ab2` |
-| `M8.pt` | M8 (v17 raw s0) | 1.43 MB | `cf42dd9033515257` |
-| `M9_seed0.pt` | M9 (v17 s0) | 2.86 MB | `ab7da7a76157e575` |
-| `M9_seed1.pt` | M9 (v17 s1) | 2.86 MB | `db1ae7737576bc2d` |
-| `M9_seed2.pt` | M9 (v17 s2) | 2.86 MB | `f066003531c91eb9` |
-| `M2SZA.pt` | M2-SZA (train_sza s0) | 1.44 MB | `18c746235190f63b` |
+## 4. Configurations
 
-Each file is a dictionary with the keys `config_id`, `note`, `args` (hyperparameters
-of the run), `model` (trained weights) and `ema` (moving average, M0, M1 and M9
-only). M9 must be evaluated with the `ema` weights; `evaluate.py` selects them
-automatically whenever the entry is present. `M8.pt` is the run labelled `M7` in
-the internal working directory of the project, as noted in `config_id`.
+M0-M5 are cumulative. Three seeds (0, 1, 2) were run for every configuration.
+
+| name | content |
+|---|---|
+| M0 | 3D CNN, normalization common to all levels, uniform level and variable weights, physics loss |
+| M1 | level-wise normalization, altitude-decaying level weight |
+| M2 | variable-wise loss weights (T 1.3, Ps 1.8) |
+| M3 | topography input, boundary-condition loss |
+| M4 | mass constraint and mass fixer, lower bound of the level weight, topographic-gradient regularization, global-mean and zonal-mean wind increment constraints |
+| M5 | increment normalization, mass fixer at the final training stage (final configuration) |
+| M2+S ... M5+S | M2 ... M5 with the spectral loss(es) |
+| M2-P0, M2-P1, M2-P10, M5-P0 | weight of the physics loss 0, 1, 10 (M2) and 0 (M5); the reference is 0.03 |
+| M2-2E, M5-2E | 12 instead of 6 epochs per curriculum stage |
+| M2-SZA, M5-SZA | three solar input channels: cos(SZA), sine and cosine of the local mean solar time |
+
+`jobs/run_config.sh` holds the exact command line of each configuration.
 
 ## 5. Quick start
 
-### 5.1 Evaluate one configuration
+### 5.1 Evaluate a released checkpoint
 
 ```bash
 DATA=/path/to/npy
-mkdir -p runs/M9_seed0
-cp weights/M9_seed0.pt runs/M9_seed0/final.pt
-python code/evaluate.py --dir $DATA --run_dirs runs/M9_seed0 --out out/M9_seed0 --threads 112
+mkdir -p runs/M5_seed0
+cp weights/M5_seed0.pt runs/M5_seed0/final.pt
+cd code
+python evaluate.py --dir $DATA --run_dirs ../runs/M5_seed0 \
+    --t_train 600 --horizon 143 --heights 0 100 120 150 200 300 \
+    --tide_heights 100 120 130 150 --timing_repeats 5 --plot 0 --threads 112
 ```
 
-`--run_dirs` takes one directory per configuration holding `final.pt` (or
-`full3d.pt` with `--ckpt_prefer full3d`). The output `results.json` contains, for
-each requested height, RMSE, bias, centered RMSE, ACC against the climatological
-anomaly, pattern correlation, the persistence and climatology baselines, the
-vertical profile, the mass-drift series and the Fourier decomposition of
-atmospheric tides.
+The output `runs/M5_seed0/extra3/results_extra3.json` contains, for each height
+and lead time, the RMSE, bias, centered RMSE and anomaly correlation of the
+prediction, of persistence and of the time-mean climatology, the series of the
+global-mean surface pressure with and without the mass fixer, the Fourier
+decomposition of the tides, and the timing. The configuration is read from the
+`args` entry of the checkpoint. `--dump_fields 1` also writes `fields.npz`
+(prediction, truth, initial state, and climatology at the requested lead times).
+
+### 5.2 Train a configuration
 
 ```bash
-python code/plot_profiles.py --runs runs/M5 runs/M6 runs/M7 --out figs/
+bash jobs/run_config.sh M5 0 /path/to/npy runs/M5_seed0     # 28-38 min on 112 threads
 ```
 
-### 5.2 Train one configuration
-
-The settings of every released weight are stored in the `args` entry of the
-checkpoint and can be replayed as they are.
+### 5.3 Baselines with the diurnal cycle
 
 ```bash
-python code/train_v15.py --dir $DATA \
-    --Ps_weight 1.8 \
-    --T_weight 1.3 \
-    --bc_lower kinematic \
-    --bc_upper flat \
-    --bptt_steps 2 \
-    --cal_hours 24 \
-    --calibrate \
-    --causal_eps 0.03 \
-    --ch 48 96 64 32 \
-    --clip_inc 1.0 \
-    --ema_decay 0.0 \
-    --epochs_per_stage 6 \
-    --friction_coef 0.0002 \
-    --hypervisc 0.05 \
-    --no-inference_hypervisc \
-    --lambda_phys 0.03 \
-    --level_weight_floor 0.1 \
-    --level_weight_scale_km 40.0 \
-    --levels 48 \
-    --lr 0.001 \
-    --mass_fix \
-    --noise 0.05 \
-    --rollouts 1 6 12 24 \
-    --seed 0 \
-    --stride 1 \
-    --top_boost 2.0 \
-    --top_levels 5 \
-    --train_days 25 \
-    --u_weight 1.0 \
-    --use_terrain \
-    --v_weight 1.0 \
-    --w_bc 0.3 \
-    --w_mass 0.5 \
-    --w_spec 0.05 \
-    --w_spec_high 0.1 \
-    --w_terr 0.1 \
-    --w_weight 1.0 \
-    --w_wind_mass 0.3 \
-    --w_zonal 0.3 \
-    --outdir out/M7
+cd code
+python baseline_diurnal.py --dir $DATA --t_train 600 --horizon 143 --out ../results/baselines
 ```
+
+### 5.4 Tables and figures of the paper
 
 ```bash
-python code/train_v17.py --dir $DATA \
-    --Ps_weight 1.8 \
-    --T_weight 1.3 \
-    --bc_lower kinematic \
-    --bc_upper flat \
-    --bptt_steps 2 \
-    --cal_hours 24 \
-    --calibrate \
-    --causal_eps 0.03 \
-    --ch 48 96 64 32 \
-    --clip_inc 1.0 \
-    --ema_decay 0.999 \
-    --epochs_per_stage 6 \
-    --finetune_massfix \
-    --friction_coef 0.0002 \
-    --hypervisc 0.05 \
-    --inc_boost_max 50.0 \
-    --inc_norm \
-    --no-inference_hypervisc \
-    --lambda_phys 0.03 \
-    --level_weight_floor 0.1 \
-    --level_weight_scale_km 40.0 \
-    --levels 48 \
-    --lr 0.001 \
-    --mass_fix \
-    --no-mass_fix_cosphi \
-    --noise 0.05 \
-    --rollouts 1 6 12 24 \
-    --seed 0 \
-    --stride 1 \
-    --top_boost 2.0 \
-    --top_levels 5 \
-    --train_days 25 \
-    --u_weight 1.0 \
-    --use_terrain \
-    --v_weight 1.0 \
-    --w_bc 0.3 \
-    --w_mass 0.5 \
-    --w_spec 0.05 \
-    --w_spec_high 0.1 \
-    --w_terr 0.1 \
-    --w_weight 1.0 \
-    --w_wind_mass 0.3 \
-    --w_zonal 0.3 \
-    --outdir out/M9_seed0
+cd analysis
+python tabs.py      # Tables 3-7
+python figs.py      # Figures 3-8 -> ../figs
+python fig2.py      # Figure 2
 ```
 
-One run takes 32-36 min on 112 threads; `--seed` selects the seed, and seeds 0,
-1 and 2 give the three M9 runs of the paper.
+The scripts read `results/`; set the environment variable `RESULTS` to use the
+output of your own runs (one directory `<configuration>_seed<seed>` per run with
+`results.json`, `results_extra3.json` and, for Figures 5 and 8, `fields.npz`).
 
-### 5.3 Table 5 (lambda_phys control experiment)
-
-The script keeps the name `make_table4.py` of the first release; the table it
-builds is Table 5 of the paper.
+### 5.5 Movie
 
 ```bash
-python code/make_table4.py \
-    --group M2 out/lphys/M2_l0.03_s0 out/lphys/M2_l0.03_s1 out/lphys/M2_l0.03_s2 \
-               out/lphys/M2_l0_s0 out/lphys/M2_l0_s1 out/lphys/M2_l0_s2 \
-    --out table4.csv
+cd code
+python evaluate.py --dir $DATA --run_dirs ../runs/M5_seed0 --t_train 600 --horizon 143 \
+    --clamp_diag 0 --timing_repeats 0 --drift_series 0 --plot 0 \
+    --dump_fields 1 --dump_leads $(seq 1 143) --dump_heights 0 300
+cd ../analysis
+python make_movie.py --fields ../runs/M5_seed0/extra3/fields.npz --label M5 --out M5.mp4
 ```
 
-The table is built from the pre-calibration series `surface_rmse_raw`; the
-calibrated series `surface_rmse` is read only for reference, which is why both
-appear in the output and why the caption of Table 4 states that the values are
-uncorrected.
+## 6. Notes on the results files
 
-### 5.4 Solar-forced variant (M2-SZA)
+* `results_extra3.json`: `native[<height>][<variable>][pred|persist|clim].series`
+  holds `rmse`, `bias`, `crmse`, `acc_gm` and `acc_clim` for lead times 1-143 h.
+  The ACC of the paper is `acc_clim`. The values are not area weighted.
+* `drift_series` holds the sum over longitude of the cos-latitude-weighted surface
+  pressure; divide by the number of longitudes (128) to obtain the global mean in hPa.
+* `training_log.txt`: `loss` is the data loss, `phys` the physics loss before
+  multiplication by its weight, and the other terms are weighted.
 
-Section 3.4 and Tables A2, A3 and S6 of the paper report an additional
-experiment, M2-SZA, in which the solar geometry is appended to the input of M2
-as three channels: the cosine of the solar zenith angle and the sine and cosine
-of the local mean solar time. The input therefore has 9 channels instead of 6;
-all other settings are those of M2. `evaluate.py` builds a 6-channel (7-channel
-with terrain) input, so M2-SZA has its own training and evaluation scripts.
+## 7. Checkpoints
 
-`train_sza.py` differs from `train_v15.py` only in
+Each file in `weights/` is a dictionary with the keys `config_id`, `args`
+(hyperparameters of the run) and `model` (trained weights at the end of training).
+Sizes and SHA-256 digests are listed in `weights/SHA256.md`.
 
-* the number of input channels, `(7 if use_terrain else 6) + (3 if solar else 0)`,
-* the options `--solar`, `--time_origin` and `--data_start_hour`,
-* the argument `hour` of `build_input()`, which appends the solar channels, and
-  the time index passed at every call (`s0 + k` in training, `rs + k` in the
-  rollout).
+## 8. Changes from version 1.x
 
-The solar channels are computed by `solar_geometry.py` (NOAA approximation) from
-the time of each input state. Data index 0 is `2020-01-01T00:00:00+00:00`, the
-start of the GCM run. `--time_origin` and `--data_start_hour` must be the same in
-training and evaluation; otherwise the phase of the solar forcing, and thus the
-tidal phase, is inconsistent.
+Version 1.x treated `gw.npy` as a geometric vertical velocity in the physics
+residual and in the kinematic boundary condition, and imposed the boundary
+condition at the lowest level, where omega is zero in the GCM output. All
+configurations were therefore retrained with the corrected formulation, and the
+set of configurations was revised. The code, weights, and results of version 1.x
+are not part of this version and should not be used.
 
-Evaluate the released weights (one rollout, 3-5 min on 112 threads):
+## 9. Licence and citation
 
-```bash
-mkdir -p runs/M2SZA
-cp weights/M2SZA.pt runs/M2SZA/final.pt
-python code/evaluate_sza.py --run_dir runs/M2SZA --data_dir $DATA --threads 112 \
-    --t_train 600 --horizon 143 --out out/M2SZA/eval_m2sza.json
-```
+* Code (`code/`, `jobs/`, `analysis/`): MIT licence (`LICENSE`).
+* Trained weights (`weights/`) and results (`results/`): CC BY 4.0 (`LICENSE-weights`).
 
-The output reproduces the M2-SZA row of Table A3 (DW1/SW2 amplitudes of the
-temperature in the equatorial band, +-21.5 deg, in K):
+This repository is archived at Zenodo. The DOI below is the concept DOI, which
+always resolves to the latest version; the DOI of each version is given on the
+Zenodo record.
 
-| altitude | DW1 M2-SZA / truth | SW2 M2-SZA / truth |
-|---|---|---|
-| 99.8 km | 3.26 / 6.74 | 2.43 / 9.80 |
-| 123.1 km | 9.88 / 10.98 | 3.53 / 21.62 |
-| 136.5 km | 15.69 / 18.34 | 5.84 / 18.88 |
-| 148.7 km | 26.13 / 33.89 | 8.45 / 19.94 |
+> Fukazawa, K. (2026) GCM_PINNs: code, trained weights, and evaluation results of a
+> physics-informed neural network surrogate model for a general circulation model
+> (v2.0.0). Zenodo. https://doi.org/10.5281/zenodo.24050683
 
-Train it again (about 32 min on 112 threads):
-
-```bash
-python code/train_sza.py --dir $DATA \
-    --Ps_weight 1.8 \
-    --T_weight 1.3 \
-    --bc_lower kinematic \
-    --bc_upper flat \
-    --bptt_steps 2 \
-    --cal_hours 24 \
-    --calibrate \
-    --causal_eps 0.03 \
-    --ch 48 96 64 32 \
-    --clip_inc 1.0 \
-    --data_start_hour 0.0 \
-    --ema_decay 0.0 \
-    --epochs_per_stage 6 \
-    --friction_coef 0.0002 \
-    --hypervisc 0.05 \
-    --inference_hypervisc \
-    --lambda_phys 0.03 \
-    --level_weight_floor 0.0 \
-    --level_weight_scale_km 40.0 \
-    --levels 48 \
-    --lr 0.001 \
-    --no-mass_fix \
-    --noise 0.05 \
-    --rollouts 1 6 12 24 \
-    --seed 0 \
-    --solar \
-    --stride 1 \
-    --time_origin 2020-01-01T00:00:00+00:00 \
-    --top_boost 1.0 \
-    --top_levels 5 \
-    --train_days 25 \
-    --u_weight 1.0 \
-    --no-use_terrain \
-    --v_weight 1.0 \
-    --w_bc 0.0 \
-    --w_mass 0.0 \
-    --w_spec 0.0 \
-    --w_spec_high 0.0 \
-    --w_terr 0.0 \
-    --w_weight 1.0 \
-    --w_wind_mass 0.0 \
-    --w_zonal 0.0 \
-    --outdir out/M2SZA
-```
-
-## 6. Configuration map
-
-| paper | implementation | change relative to the previous configuration |
-|---|---|---|
-| M0 | v7 | reference: normalization shared by all layers, `lambda_phys = 0.02` |
-| M1 | v8 | layer-wise normalization, height-decaying layer weights |
-| M2 | v9 | variable-wise loss weights |
-| M3 | v10 | terrain input, boundary-condition and spectral losses |
-| M4 | v11 | mass constraint, mass fixer at inference, no smoothing at inference |
-| M5 | v15 | layer-weight floor 0.1, terrain-gradient regularization, stronger boundary loss |
-| M6 | v15 | global-mean wind-increment constraint, high-wavenumber spectral loss, upper-level boost |
-| M7 | v15 | zonal-mean wind-increment constraint |
-| M8 | v17 | M7 losses with the double normalization of Section 2.4.3 removed |
-| M9 | v17 | increment normalization, weight EMA, mass fixer in the final curriculum stage |
-| M2-SZA | train_sza (v15 base) | M2 with the solar zenith angle and local mean solar time in the input (Section 5.4) |
-
-Implementations v7-v11 are not part of this package; only their checkpoints are
-archived. They differ from v15/v17 in the number of input channels (no terrain
-input in v7-v9) and in the layer-weighting scheme. `evaluate.py` infers the number
-of input channels from the weights, so all twelve checkpoints can be evaluated
-with the same script.
-
-## 7. Changes made for release
-
-* Comments and docstrings of the working scripts were removed. A short English
-  header and a few English one-line comments were added where the intent of the
-  code is not self-evident (mass fixer, increment clipping, EMA, physics
-  residual, tide decomposition).
-* Command-line help strings that were not in English were dropped; the options
-  are documented in Sections 5 and 6.
-* The checkpoints keep only the weights and the hyperparameters. Optimizer
-  states, absolute paths, user and project names, job tags and timings were
-  removed. The weights were verified to be bit-identical before and after
-  rewriting.
-* Console messages of the training loop are left as they were in the archived
-  runs so that the logs of the paper remain comparable.
-* Version 1.1.0 adds M2-SZA (`train_sza.py`, `solar_geometry.py`,
-  `evaluate_sza.py`, `weights/M2SZA.pt`; Section 5.4), corrects the section and
-  table numbers to those of the revised manuscript, and removes
-  `--rollout_start None` from the training commands of Section 5.2 (the option
-  takes an integer; when it is omitted, the rollout starts at the end of the
-  training period).
-
-## 8. Licence and citation
-
-* Code (`code/`): MIT licence (`LICENSE`).
-* Trained weights (`weights/`): CC BY 4.0 (`LICENSE-weights`).
-
-Version 1.1.0 of this repository is archived at Zenodo:
-
-> Fukazawa, K. (2026) GCM_PINNs: code and trained weights of a physics-informed
-> neural network surrogate model for a general circulation model (v1.1.0).
-> Zenodo. https://doi.org/10.5281/zenodo.24050684
-
-If you use this code or these weights, please also cite the accompanying
-manuscript:
+If you use this code or these weights, please also cite the accompanying manuscript:
 
 > Fukazawa, K., Miyoshi, Y. Development and evaluation of a physics-informed
 > neural network surrogate model for a general circulation model. Submitted to
 > Earth, Planets and Space.
-
-The DOI above refers to version 1.1.0. The Zenodo record also gives a concept
-DOI that always resolves to the latest version.

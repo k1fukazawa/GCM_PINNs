@@ -1,12 +1,12 @@
 cff-version: 1.2.0
-title: "PINN surrogate of an all-atmosphere GCM: code and trained weights"
+title: "GCM_PINNs: code, trained weights, and evaluation results of a physics-informed neural network surrogate model for a general circulation model"
 message: "If you use this code or these weights, please cite the accompanying manuscript."
 type: software
 authors:
   - family-names: "FUKAZAWA"
     given-names: "Keiichiro"
-version: "1.1.0"
-date-released: "2026-11-08"
+version: "2.0.0"
+date-released: "2026-11-15"
 license: MIT
 keywords:
   - physics-informed neural network

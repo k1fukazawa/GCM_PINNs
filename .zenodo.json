@@ -1,7 +1,7 @@
 {
-  "title": "GCM_PINNs: code and trained weights of a physics-informed neural network surrogate model for a general circulation model",
+  "title": "GCM_PINNs: code, trained weights, and evaluation results of a physics-informed neural network surrogate model for a general circulation model",
   "upload_type": "software",
-  "description": "<p>Code and trained weights for the manuscript \"Development and evaluation of a physics-informed neural network surrogate model for a general circulation model\" by K. Fukazawa and Y. Miyoshi (submitted to Earth, Planets and Space). The package contains the training and evaluation code of the autoregressive PINN surrogate of a T42, 150-level GCM that contains the region from the ground surface to the exobase, and 13 trained checkpoints (M0-M8, M9 with three seeds, and the solar-forced experiment M2-SZA). The GCM output used for training is available from the authors upon reasonable request.</p>",
+  "description": "<p>Code, trained weights, and evaluation results for the manuscript \"Development and evaluation of a physics-informed neural network surrogate model for a general circulation model\" by K. Fukazawa and Y. Miyoshi (submitted to Earth, Planets and Space). The package contains the training and evaluation code of the autoregressive PINN surrogate of a T42, 150-level GCM that contains the region from the ground surface to the exobase, 54 trained checkpoints (18 configurations with three random seeds each), the evaluation results of all runs, the statistical baselines, and the scripts for the tables and figures of the paper. Version 2.0.0 replaces version 1.x: the vertical velocity of the GCM output is treated as a pressure vertical velocity in the physics residual and in the kinematic boundary condition, and all configurations were retrained. The GCM output used for training is available from the authors upon reasonable request.</p>",
   "creators": [
     {
       "name": "Fukazawa, Keiichiro",
@@ -21,5 +21,6 @@
   "references": [
     "Fukazawa, K., Miyoshi, Y. Development and evaluation of a physics-informed neural network surrogate model for a general circulation model. Submitted to Earth, Planets and Space."
   ],
-  "notes": "Code: MIT licence (LICENSE). Trained weights in weights/: CC BY 4.0 (LICENSE-weights)."
+  "notes": "Code: MIT licence (LICENSE). Trained weights in weights/ and results in results/: CC BY 4.0 (LICENSE-weights).",
+  "version": "2.0.0"
 }

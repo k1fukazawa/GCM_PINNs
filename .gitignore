@@ -3,5 +3,5 @@ __pycache__/
 out/
 runs/
 figs/
-*.csv
-!requirements.txt
+*.mp4
+*.gif
