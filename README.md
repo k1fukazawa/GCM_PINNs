@@ -7,10 +7,11 @@ evaluation of a physics-informed neural network surrogate model for a general
 circulation model" by K. Fukazawa and Y. Miyoshi (submitted to Earth, Planets and
 Space). The surrogate approximates a GCM that contains the region from the ground
 surface to the exobase (T42, 150 levels). The package reproduces the training and
-the evaluation of the 18 configurations of the paper (three random seeds each),
+the evaluation of the 21 configurations of the paper (three random seeds each),
 the statistical baselines, and Tables 3-7 and Figures 2-8.
 
-Version 2.0.0 replaces version 1.x completely (Section 8).
+Version 2.x replaces version 1.x completely (Section 8). Version 2.1.0 adds the
+experiments on the amount of training (M5-4E, M5-8E, and M5-P0-8E).
 
 ## 1. Contents
 
@@ -30,12 +31,12 @@ analysis/
   figs.py, fig2.py      Figures 3-8 and Figure 2
   make_movie.py         movie of the GCM, the surrogate, and their difference
 results/
-  <configuration>_seed<seed>/results.json, results_extra3.json   evaluation of the 54 runs
+  <configuration>_seed<seed>/results.json, results_extra3.json   evaluation of the 63 runs
   M5_seed0/fields.npz, M5-SZA_seed0/fields.npz                   fields of Figures 5 and 8
   baselines/diurnal.json                                         statistical baselines
   training_log.txt                                               loss terms of every epoch
 weights/
-  <configuration>_seed<seed>.pt                                  54 checkpoints, SHA256.md
+  <configuration>_seed<seed>.pt                                  63 checkpoints, SHA256.md
 ```
 
 Not included: the GCM source code (available from the model developers) and the
@@ -87,6 +88,8 @@ M0-M5 are cumulative. Three seeds (0, 1, 2) were run for every configuration.
 | M2+S ... M5+S | M2 ... M5 with the spectral loss(es) |
 | M2-P0, M2-P1, M2-P10, M5-P0 | weight of the physics loss 0, 1, 10 (M2) and 0 (M5); the reference is 0.03 |
 | M2-2E, M5-2E | 12 instead of 6 epochs per curriculum stage |
+| M5-4E, M5-8E | 24 and 48 epochs per curriculum stage |
+| M5-P0-8E | M5-8E with the weight of the physics loss 0 |
 | M2-SZA, M5-SZA | three solar input channels: cos(SZA), sine and cosine of the local mean solar time |
 
 `jobs/run_config.sh` holds the exact command line of each configuration.
@@ -175,6 +178,12 @@ configurations were therefore retrained with the corrected formulation, and the
 set of configurations was revised. The code, weights, and results of version 1.x
 are not part of this version and should not be used.
 
+Version 2.1.0 adds nine runs (M5-4E, M5-8E, and M5-P0-8E, three seeds each) with
+their checkpoints and results, the corresponding entries of `jobs/run_config.sh`,
+and the column of the 100-km zonal wind in Table 6 (`analysis/tabs.py`). The code
+for training and evaluation and the 54 checkpoints and results of version 2.0.0
+are unchanged.
+
 ## 9. Licence and citation
 
 * Code (`code/`, `jobs/`, `analysis/`): MIT licence (`LICENSE`).
@@ -186,7 +195,7 @@ Zenodo record.
 
 > Fukazawa, K. (2026) GCM_PINNs: code, trained weights, and evaluation results of a
 > physics-informed neural network surrogate model for a general circulation model
-> (v2.0.0). Zenodo. https://doi.org/10.5281/zenodo.24050683
+> (v2.1.0). Zenodo. https://doi.org/10.5281/zenodo.24050683
 
 If you use this code or these weights, please also cite the accompanying manuscript:
 

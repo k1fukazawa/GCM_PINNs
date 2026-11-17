@@ -8,7 +8,7 @@ weights/<paper name>_seed<seed>.pt with the entries
   model     : trained weights (unchanged)
 and print a table of sizes and SHA-256 digests (also written to weights/SHA256.md).
 
-Usage:  python pack_weights.py --runs ./out/v18 --out ./weights
+Usage:  python pack_weights.py --runs ./out/v18 --out ./weights [--only M5-4E M5-8E ...]
 """
 import argparse, hashlib, os
 import torch
@@ -16,16 +16,20 @@ import torch
 MAP = {"M0": "M0w", "M1": "M1w", "M2": "M2w", "M3": "B1_M3w_nospec", "M4": "B5_M8w_nospec", "M5": "B6_M9w_nospec",
        "M2+S": "B4_M2w_spec", "M3+S": "M3w", "M4+S": "M8w", "M5+S": "M9w",
        "M2-P0": "M2w_lp0", "M2-P1": "A3_M2w_lp1", "M2-P10": "A3_M2w_lp10", "M5-P0": "B6_M9w_nospec_lp0",
-       "M2-2E": "A2_M2w_long", "M5-2E": "B7_M9w_nospec_long", "M2-SZA": "M2w_sza", "M5-SZA": "B6_M9w_nospec_sza"}
+       "M2-2E": "A2_M2w_long", "M5-2E": "B7_M9w_nospec_long",
+       "M5-4E": "C1_M9w_nospec_x4", "M5-8E": "C2_M9w_nospec_x8", "M5-P0-8E": "C3_M9w_nospec_lp0_x8", "M2-SZA": "M2w_sza", "M5-SZA": "B6_M9w_nospec_sza"}
 DROP = ("dir", "outdir", "tag", "threads", "resume", "compile", "amp", "channels_last", "save_every", "quick", "rollout_start")
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--runs", default="./out/v18")
 ap.add_argument("--out", default="./weights")
+ap.add_argument("--only", nargs="*", default=None)
 args = ap.parse_args()
 os.makedirs(args.out, exist_ok=True)
 rows = []
 for name, d in MAP.items():
+    if args.only and name not in args.only:
+        continue
     for s in range(3):
         src = f"{args.runs}/{d}_s{s}/final.pt"
         if not os.path.exists(src):

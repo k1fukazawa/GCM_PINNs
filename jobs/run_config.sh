@@ -1,8 +1,8 @@
 #!/bin/bash
 # Train one configuration of the paper.
 #   bash jobs/run_config.sh <name> <seed> [data_dir] [out_dir]
-# <name>: M0 M1 M2 M3 M4 M5  M2+S M3+S M4+S M5+S  M2-P0 M2-P1 M2-P10 M5-P0  M2-2E M5-2E  M2-SZA M5-SZA
-# One run takes 28-38 min on one node with 112 CPU threads (twice as long for the -2E runs).
+# <name>: M0 M1 M2 M3 M4 M5  M2+S M3+S M4+S M5+S  M2-P0 M2-P1 M2-P10 M5-P0  M2-2E M5-2E M5-4E M5-8E M5-P0-8E  M2-SZA M5-SZA
+# One run takes 28-38 min on one node with 112 CPU threads (2, 4, and 8 times as long for the -2E, -4E, and -8E runs).
 set -e
 NAME=$1; SEED=${2:-0}; DATA=${3:-./npy}; OUT=${4:-./runs/${NAME}_seed${SEED}}
 THREADS=${THREADS:-112}
@@ -33,6 +33,9 @@ case "$NAME" in
   M5-P0) FLAGS=$M5; LP=0;;
   M2-2E) FLAGS=$M2; EPOCHS=12;;
   M5-2E) FLAGS=$M5; EPOCHS=12;;
+  M5-4E) FLAGS=$M5; EPOCHS=24;;
+  M5-8E) FLAGS=$M5; EPOCHS=48;;
+  M5-P0-8E) FLAGS=$M5; LP=0; EPOCHS=48;;
   M2-SZA) FLAGS=$M2; EXTRA="--solar";;
   M5-SZA) FLAGS=$M5; EXTRA="--solar";;
   *) echo "unknown configuration: $NAME" >&2; exit 1;;

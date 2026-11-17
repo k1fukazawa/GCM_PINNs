@@ -4,7 +4,7 @@ Set the environment variable RESULTS to use another results directory.
 """
 import json, glob, re, statistics as st, os
 R = os.environ.get('RESULTS', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'results')) + '/'
-NAMES = ['M0', 'M1', 'M2', 'M3', 'M4', 'M5', 'M2+S', 'M3+S', 'M4+S', 'M5+S', 'M2-P0', 'M2-P1', 'M2-P10', 'M5-P0', 'M2-2E', 'M5-2E', 'M2-SZA', 'M5-SZA']
+NAMES = ['M0', 'M1', 'M2', 'M3', 'M4', 'M5', 'M2+S', 'M3+S', 'M4+S', 'M5+S', 'M2-P0', 'M2-P1', 'M2-P10', 'M5-P0', 'M2-2E', 'M5-2E', 'M5-4E', 'M5-8E', 'M5-P0-8E', 'M2-SZA', 'M5-SZA']
 MAP = {n: n for n in NAMES}
 E = {}
 Rj = {}
